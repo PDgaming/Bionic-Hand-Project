@@ -58,7 +58,8 @@ def normalize_curl(raw_value, min_val, max_val):
     return max(0.0, min(1.0, (raw_value - min_val) / (max_val - min_val)))
 
 
-ser = serial.Serial("/dev/ttyACM0", 115200)
+ser = False
+#serial.Serial("/dev/ttyACM0", 115200)
 
 
 class HandTrackerApp(QWidget):

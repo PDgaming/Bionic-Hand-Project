@@ -7,7 +7,7 @@ Servo servos[5];
 Servo thumbRotServo;
 
 // --- Reverse flags ---
-bool reversed[5] = {false, true, true, true, true}; // Per finger
+bool reversed[5] = {true, true, false, true, true}; // Per finger
 int offset[5] = {0, 0, 0, 25, 0};                  // Offsets in degrees
 
 // --- Input/angle ranges ---
