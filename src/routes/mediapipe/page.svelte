@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import './btn.css';
 
 	let videoElement: HTMLVideoElement;
 	let canvasElement: HTMLCanvasElement;
@@ -23,6 +24,7 @@
 	let serialError: string | null = null;
 	let receivedData = 'Waiting for data...';
 	let isSerialConnected = false;
+	let calibrationState: string = '';
 
 	// MediaPipe hand landmark indices
 	const HandLandmark = {
@@ -63,7 +65,7 @@
 			dist(landmarks[HandLandmark.INDEX_FINGER_MCP], landmarks[HandLandmark.PINKY_MCP]) + 1e-6;
 
 		const fingerTips = {
-			thumb: { tip: HandLandmark.THUMB_TIP, base: HandLandmark.THUMB_MCP },
+			thumb: { tip: HandLandmark.THUMB_IP, base: HandLandmark.THUMB_MCP },
 			index: { tip: HandLandmark.INDEX_FINGER_TIP, base: HandLandmark.WRIST },
 			middle: { tip: HandLandmark.MIDDLE_FINGER_TIP, base: HandLandmark.WRIST },
 			ring: { tip: HandLandmark.RING_FINGER_TIP, base: HandLandmark.WRIST },
@@ -76,7 +78,7 @@
 		}
 
 		const thumbRot =
-			dist(landmarks[HandLandmark.THUMB_TIP], landmarks[HandLandmark.PINKY_MCP]) / palmWidth;
+			dist(landmarks[HandLandmark.THUMB_MCP], landmarks[HandLandmark.PINKY_MCP]) / palmWidth;
 
 		curls.thumb_rot = thumbRot;
 
@@ -107,13 +109,19 @@
 		if (!browser) return;
 		localStorage.setItem(CALIBRATION_KEY, JSON.stringify(calibration));
 		console.log('Calibration saved:', calibration);
-		alert('Calibration saved successfully!');
+		calibrationState = 'Calibration saved successfully!';
+		setTimeout(() => {
+			calibrationState = '';
+		}, 800);
 	}
 
 	// Calibrate current hand position
 	function calibrate(mode: 'min' | 'max') {
 		if (!fingerCurls) {
-			alert('No hand detected! Please show your hand to the camera.');
+			calibrationState = 'No hand detected! Please show your hand to the camera.';
+			setTimeout(() => {
+				calibrationState = '';
+			}, 800);
 			return;
 		}
 
@@ -143,7 +151,10 @@
 			)
 		);
 
-		alert(`${mode === 'min' ? 'Open' : 'Closed'} hand position recorded!`);
+		calibrationState = `${mode === 'min' ? 'Open' : 'Closed'} hand position recorded!`;
+		setTimeout(() => {
+			calibrationState = '';
+		}, 800);
 	}
 
 	// Reset calibration
@@ -153,7 +164,10 @@
 			localStorage.removeItem(CALIBRATION_KEY);
 		}
 		console.log('Calibration reset. Please recalibrate your hand.');
-		alert('Calibration reset! Please recalibrate by capturing open and closed hand positions.');
+		calibrationState = 'Calibration reset!';
+		setTimeout(() => {
+			calibrationState = '';
+		}, 800);
 	}
 
 	// --- Serial Communication Functions ---
@@ -254,9 +268,7 @@
 		const message = `${thumbPWM},${indexPWM},${middlePWM},${ringPWM},${pinkyPWM},${thumbRotPWM}`;
 		sendSerialData(message);
 	}
-
 	// --- MediaPipe Setup ---
-
 	onMount(async () => {
 		if (!browser) return;
 
@@ -264,15 +276,15 @@
 		calibration = loadCalibration();
 		await initializeHandLandmarker();
 
-		return () => {
-			if (animationId) {
-				cancelAnimationFrame(animationId);
-			}
-			stopVideo();
-			if (isSerialConnected) {
-				disconnectSerial();
-			}
-		};
+		// return () => {
+		if (animationId) {
+			cancelAnimationFrame(animationId);
+		}
+		stopVideo();
+		if (isSerialConnected) {
+			disconnectSerial();
+		}
+		// };
 	});
 
 	async function initializeHandLandmarker() {
@@ -545,159 +557,187 @@
 	}
 </script>
 
-<div class="container">
-	<h2>Bionic Hand Controller</h2>
+<div class="main">
+	<div class="w-full text-center">
+		<h1>Bionic Hand Controller</h1>
+	</div>
 
-	<!-- Serial Connection Section -->
-	<div class="serial-section">
-		<h3>Arduino Connection</h3>
-		<div class="serial-controls">
-			<button
-				on:click={isSerialConnected ? disconnectSerial : connectSerial}
-				class={isSerialConnected ? 'btn-danger' : 'btn-success'}
-				disabled={isConnecting}
-			>
-				{#if isSerialConnected}
-					Disconnect Arduino
-				{:else if isConnecting}
-					Connecting...
-				{:else}
-					Connect to Arduino
+	<div class="content flex flex-row">
+		<div class="left flex flex-col items-center gap-3">
+			<div class="video">
+				<!-- Video Section -->
+				<div class="video-container">
+					<video bind:this={videoElement} class="input-video" autoplay playsinline></video>
+					<canvas bind:this={canvasElement} class="output-canvas" width="640" height="480"></canvas>
+				</div>
+
+				<!-- Tracking Controls -->
+				<div class="controls mt-3 text-center">
+					{#if !isTracking}
+						<button on:click={startTracking} class="btn-primary">Start Tracking</button>
+					{:else}
+						<button on:click={stopTracking} class="btn-danger">Stop Tracking</button>
+					{/if}
+				</div>
+
+				<!-- Calibration Controls -->
+				<div class="calibration-controls mt-3 flex flex-row justify-evenly">
+					<div class="left-col flex flex-col gap-3">
+						<button on:click={() => calibrate('min')} class="btn-secondary" disabled={!isTracking}>
+							Calibrate Open Hand
+						</button>
+						<button on:click={() => calibrate('max')} class="btn-secondary" disabled={!isTracking}>
+							Calibrate Closed Hand
+						</button>
+					</div>
+					<div class="right-col flex flex-col gap-3">
+						<button
+							on:click={saveCalibration}
+							class="btn-success"
+							disabled={Object.keys(calibration).length === 0}
+						>
+							Save Calibration
+						</button>
+						<button on:click={recalibrate} class="btn-warning"> Reset Calibration </button>
+					</div>
+				</div>
+			</div>
+
+			{#if calibrationState != ''}
+				<div class="calibration-state">
+					<p>{calibrationState}</p>
+				</div>
+			{/if}
+
+			<!-- Serial Connection Section -->
+			<div class="serial-section">
+				<h3>Arduino Connection</h3>
+				<div class="serial-controls">
+					<button
+						on:click={isSerialConnected ? disconnectSerial : connectSerial}
+						class={isSerialConnected ? 'btn-danger' : 'btn-success'}
+						disabled={isConnecting}
+					>
+						{#if isSerialConnected}
+							Disconnect Arduino
+						{:else if isConnecting}
+							Connecting...
+						{:else}
+							Connect to Arduino
+						{/if}
+					</button>
+
+					{#if isSerialConnected}
+						<span class="status-indicator connected">● Connected</span>
+					{:else}
+						<span class="status-indicator disconnected">● Disconnected</span>
+					{/if}
+				</div>
+
+				{#if serialError}
+					<p class="error-message">Error: {serialError}</p>
 				{/if}
-			</button>
 
-			{#if isSerialConnected}
-				<span class="status-indicator connected">● Connected</span>
-			{:else}
-				<span class="status-indicator disconnected">● Disconnected</span>
-			{/if}
-		</div>
-
-		{#if serialError}
-			<p class="error-message">Error: {serialError}</p>
-		{/if}
-
-		{#if isSerialConnected}
-			<div class="arduino-data">
-				<h4>Arduino Response:</h4>
-				<pre>{receivedData}</pre>
+				{#if isSerialConnected}
+					<div class="arduino-data">
+						<h4>Arduino Response:</h4>
+						<pre>{receivedData}</pre>
+					</div>
+				{/if}
 			</div>
-		{/if}
-	</div>
-
-	<!-- Video Section -->
-	<div class="video-container">
-		<video bind:this={videoElement} class="input-video" autoplay playsinline></video>
-		<canvas bind:this={canvasElement} class="output-canvas" width="640" height="480"></canvas>
-	</div>
-
-	<!-- Tracking Controls -->
-	<div class="controls">
-		{#if !isTracking}
-			<button on:click={startTracking} class="btn-primary">Start Tracking</button>
-		{:else}
-			<button on:click={stopTracking} class="btn-danger">Stop Tracking</button>
-		{/if}
-	</div>
-
-	<!-- Calibration Controls -->
-	<div class="calibration-controls">
-		<button on:click={() => calibrate('min')} class="btn-secondary" disabled={!isTracking}>
-			Calibrate Open Hand
-		</button>
-		<button on:click={() => calibrate('max')} class="btn-secondary" disabled={!isTracking}>
-			Calibrate Closed Hand
-		</button>
-		<button
-			on:click={saveCalibration}
-			class="btn-success"
-			disabled={Object.keys(calibration).length === 0}
-		>
-			Save Calibration
-		</button>
-		<button on:click={recalibrate} class="btn-warning"> Reset Calibration </button>
-	</div>
-
-	{#if isTracking}
-		<div class="info">
-			<p>✓ Running on CPU</p>
-			<p>Hands detected: {handsDetected}</p>
-			{#if isSerialConnected && Object.keys(calibration).length > 0}
-				<p class="sending-data">📡 Sending data to Arduino</p>
-			{/if}
 		</div>
-	{/if}
 
-	<!-- Finger Curl Values -->
-	{#if fingerCurls}
-		<div class="curl-values">
-			<h3>Finger Curl Values</h3>
-
-			<div class="values-section">
-				<h4>Raw Values (Distance Ratios)</h4>
-				<div class="curl-grid">
-					{#each Object.entries(fingerCurls) as [finger, value]}
-						<div class="curl-item">
-							<span class="finger-name">{finger.replace('_', ' ')}:</span>
-							<span class="curl-value">{value.toFixed(3)}</span>
-						</div>
-					{/each}
+		<div class="right flex flex-col items-center gap-3">
+			{#if isTracking}
+				<div class="info">
+					<p>Hands detected: {handsDetected}</p>
+					{#if isSerialConnected && Object.keys(calibration).length > 0}
+						<p class="sending-data">📡 Sending data to Arduino</p>
+					{/if}
 				</div>
-			</div>
+			{/if}
 
-			{#if normalizedCurls && Object.keys(calibration).length > 0}
-				<div class="values-section">
-					<h4>Normalized Values (0=open, 1=closed)</h4>
-					<div class="curl-grid">
-						{#each Object.entries(normalizedCurls) as [finger, value]}
-							<div class="curl-item normalized">
-								<span class="finger-name">{finger.replace('_', ' ')}:</span>
-								<span class="curl-value">{value.toFixed(2)}</span>
-								<div class="progress-bar">
-									<div class="progress-fill" style="width: {value * 100}%"></div>
+			<!-- Finger Curl Values -->
+			{#if fingerCurls}
+				<div class="curl-values">
+					<h3>Finger Curl Values</h3>
+
+					<div class="values-section">
+						<h4>Raw Values (Distance Ratios)</h4>
+						<div class="curl-grid">
+							{#each Object.entries(fingerCurls) as [finger, value]}
+								<div class="curl-item">
+									<span class="finger-name">{finger.replace('_', ' ')}:</span>
+									<span class="curl-value">{value.toFixed(3)}</span>
 								</div>
+							{/each}
+						</div>
+					</div>
+
+					{#if normalizedCurls && Object.keys(calibration).length > 0}
+						<div class="values-section">
+							<h4>Normalized Values (0=open, 1=closed)</h4>
+							<div class="curl-grid">
+								{#each Object.entries(normalizedCurls) as [finger, value]}
+									<div class="curl-item normalized">
+										<span class="finger-name">{finger.replace('_', ' ')}:</span>
+										<span class="curl-value">{value.toFixed(2)}</span>
+										<div class="progress-bar">
+											<div class="progress-fill" style="width: {value * 100}%"></div>
+										</div>
+									</div>
+								{/each}
 							</div>
-						{/each}
-					</div>
-				</div>
+						</div>
 
-				<div class="pwm-values">
-					<h4>PWM Values (0-255) - Sent to Arduino</h4>
-					<div class="pwm-grid">
-						<div class="pwm-item">Thumb: {Math.round(normalizedCurls.thumb * 255)}</div>
-						<div class="pwm-item">Index: {Math.round(normalizedCurls.index * 255)}</div>
-						<div class="pwm-item">Middle: {Math.round(normalizedCurls.middle * 255)}</div>
-						<div class="pwm-item">Ring: {Math.round(normalizedCurls.ring * 255)}</div>
-						<div class="pwm-item">Pinky: {Math.round(normalizedCurls.pinky * 255)}</div>
-						<div class="pwm-item">Thumb Rot: {Math.round(normalizedCurls.thumb_rot * 255)}</div>
-					</div>
+						<div class="pwm-values">
+							<h4>PWM Values (0-255) - Sent to Arduino</h4>
+							<div class="pwm-grid">
+								<div class="pwm-item">Thumb: {Math.round(normalizedCurls.thumb * 255)}</div>
+								<div class="pwm-item">Index: {Math.round(normalizedCurls.index * 255)}</div>
+								<div class="pwm-item">Middle: {Math.round(normalizedCurls.middle * 255)}</div>
+								<div class="pwm-item">Ring: {Math.round(normalizedCurls.ring * 255)}</div>
+								<div class="pwm-item">Pinky: {Math.round(normalizedCurls.pinky * 255)}</div>
+								<div class="pwm-item">Thumb Rot: {Math.round(normalizedCurls.thumb_rot * 255)}</div>
+							</div>
+						</div>
+					{:else}
+						<p class="note calibration-needed">
+							⚠️ No calibration data. Please calibrate by showing your open hand and clicking
+							"Calibrate Open Hand", then showing your closed fist and clicking "Calibrate Closed
+							Hand".
+						</p>
+					{/if}
+
+					<p class="note">
+						Lower raw values typically indicate more curl. Calibration normalizes these to 0-1
+						range.
+					</p>
 				</div>
-			{:else}
-				<p class="note calibration-needed">
-					⚠️ No calibration data. Please calibrate by showing your open hand and clicking "Calibrate
-					Open Hand", then showing your closed fist and clicking "Calibrate Closed Hand".
-				</p>
 			{/if}
-
-			<p class="note">
-				Lower raw values typically indicate more curl. Calibration normalizes these to 0-1 range.
-			</p>
 		</div>
-	{/if}
+	</div>
 </div>
 
 <style>
-	.container {
-		max-width: 900px;
-		margin: 0 auto;
-		padding: 20px;
+	.main {
 		font-family: Arial, sans-serif;
 	}
-
-	h2 {
-		text-align: center;
+	.content {
+		width: 100vw;
+		height: calc(100vh - 40px);
+	}
+	.left {
+		width: 50%;
+		padding: 5px;
+	}
+	.right {
+		width: 50%;
+		padding: 5px;
+	}
+	h1 {
 		color: #333;
-		margin-bottom: 20px;
+		font-size: 1.5rem;
 	}
 
 	h3 {
@@ -716,9 +756,9 @@
 	/* Serial Section */
 	.serial-section {
 		background-color: #f5f5f5;
-		padding: 20px;
+		padding: 10px;
 		border-radius: 8px;
-		margin-bottom: 20px;
+		width: 48vw;
 	}
 
 	.serial-controls {
@@ -755,6 +795,7 @@
 		background-color: #fff;
 		border-radius: 4px;
 		border: 1px solid #ddd;
+		height: 110px;
 	}
 
 	.arduino-data pre {
@@ -768,8 +809,8 @@
 	/* Video Section */
 	.video-container {
 		position: relative;
-		width: 640px;
-		height: 480px;
+		width: 48vw;
+		height: 50vh;
 		margin: 0 auto;
 	}
 
@@ -783,20 +824,6 @@
 		border: 2px solid #333;
 		border-radius: 8px;
 		background-color: #000;
-	}
-
-	/* Controls */
-	.controls {
-		text-align: center;
-		margin-top: 20px;
-	}
-
-	.calibration-controls {
-		display: flex;
-		justify-content: center;
-		gap: 10px;
-		margin-top: 15px;
-		flex-wrap: wrap;
 	}
 
 	button {
@@ -815,53 +842,13 @@
 		cursor: not-allowed;
 	}
 
-	.btn-primary {
-		background-color: #4caf50;
-	}
-
-	.btn-primary:hover:not(:disabled) {
-		background-color: #45a049;
-	}
-
-	.btn-danger {
-		background-color: #f44336;
-	}
-
-	.btn-danger:hover:not(:disabled) {
-		background-color: #da190b;
-	}
-
-	.btn-secondary {
-		background-color: #2196f3;
-	}
-
-	.btn-secondary:hover:not(:disabled) {
-		background-color: #0b7dda;
-	}
-
-	.btn-success {
-		background-color: #4caf50;
-	}
-
-	.btn-success:hover:not(:disabled) {
-		background-color: #45a049;
-	}
-
-	.btn-warning {
-		background-color: #ff9800;
-	}
-
-	.btn-warning:hover:not(:disabled) {
-		background-color: #e68900;
-	}
-
 	/* Info Section */
 	.info {
-		margin-top: 20px;
 		padding: 15px;
 		background-color: #f0f0f0;
 		border-radius: 4px;
 		text-align: center;
+		width: 48vw;
 	}
 
 	.info p {
@@ -887,11 +874,12 @@
 
 	/* Curl Values */
 	.curl-values {
-		margin-top: 20px;
-		padding: 20px;
+		padding: 10px;
 		background-color: white;
 		border-radius: 8px;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		background-color: #f0f0f0;
+		width: 48vw;
 	}
 
 	.values-section {
